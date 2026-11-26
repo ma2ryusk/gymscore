@@ -162,7 +162,40 @@
       }
       .print-page-break {
         page-break-before: always;
+        break-before: page;
       }
+      main {
+        max-width: none !important;
+        padding: 0 !important;
+      }
+      .event-card {
+        border: none !important;
+        margin-bottom: 10px !important;
+      }
+    }
+
+    /* 印刷・PDF出力時の詰めたレイアウト（印刷直前に #pdf-capture-area へ付与） */
+    .print-compact [class*="min-w-"] {
+      min-width: 0 !important;
+    }
+    .print-compact table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+    }
+    .print-compact th,
+    .print-compact td {
+      border: 1px solid #cbd5e1 !important;
+      padding: 3px 4px !important;
+    }
+    .print-compact .aa-breakdown-row {
+      font-size: 8px !important;
+      line-height: 1.25 !important;
+    }
+    .print-compact .no-print {
+      display: none !important;
+    }
+    .print-compact #event-standings-container {
+      padding: 0 !important;
     }
   </style>
 </head>
@@ -631,7 +664,7 @@
             </div>
           </div>
 
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto print-fit">
             <table class="w-full text-left border-collapse" id="table-team-standings">
               <thead>
                 <tr id="thead-team-standings" class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
@@ -657,7 +690,7 @@
             </div>
           </div>
 
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto print-fit">
             <table class="w-full text-left border-collapse" id="table-aa-standings">
               <thead>
                 <tr id="thead-aa-standings" class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
@@ -850,7 +883,11 @@
         const avgMilli = Math.round(sumMilli / 2);
         const avgDMilli = Math.round(((r1.dMilli || 0) + (r2.dMilli || 0)) / 2);
         const avgEMilli = Math.round(((r1.eMilli || 0) + (r2.eMilli || 0)) / 2);
+        const avg = k => Math.round(((r1[k] || 0) + (r2[k] || 0)) / 2);
         return {
+          ndMilli: avg('ndMilli'),
+          sbMilli: avg('sbMilli'),
+          bonusMilli: avg('bonusMilli'),
           entered: true,
           totalMilli: avgMilli,
           totalStr: fromIntMilli(avgMilli),
@@ -1939,6 +1976,9 @@
         let aaTotalMilli = 0;
         let aaDMilli = 0;
         let aaEMilli = 0;
+        let aaNdMilli = 0;
+        let aaSbMilli = 0;
+        let aaBonusMilli = 0;
         let enteredEventsCount = 0;
 
         activeEvents.forEach(ev => {
@@ -1948,6 +1988,9 @@
             aaTotalMilli += res.totalMilli;
             aaDMilli += (res.dMilli || 0);
             aaEMilli += (res.eMilli || 0);
+            aaNdMilli += (res.ndMilli || 0);
+            aaSbMilli += (res.sbMilli || 0);
+            aaBonusMilli += (res.bonusMilli || 0);
             enteredEventsCount++;
           }
         });
@@ -1961,6 +2004,12 @@
           aaEMilli,
           aaDStr: enteredEventsCount > 0 ? fromIntMilli(aaDMilli) : '-',
           aaEStr: enteredEventsCount > 0 ? fromIntMilli(aaEMilli) : '-',
+          aaNdMilli,
+          aaSbMilli,
+          aaBonusMilli,
+          aaNdStr: enteredEventsCount > 0 ? fromIntMilli(aaNdMilli) : '-',
+          aaSbStr: enteredEventsCount > 0 ? fromIntMilli(aaSbMilli) : '-',
+          aaBonusStr: enteredEventsCount > 0 ? fromIntMilli(aaBonusMilli) : '-',
           enteredEventsCount,
           adoptedEvents: {}
         };
@@ -2122,6 +2171,176 @@
     }
 
     /**
+     * 印刷・PDF用のレイアウトに切り替える（戻り値の関数で画面表示に戻す）
+     * - 出力対象の表だけを表示し、団体・個人総合・種目別をそれぞれ新しいページから始める
+     * - 表が用紙の横幅に収まるよう、print は表ごとに縮小、pdf は全体の幅を広げて用紙幅へ縮小
+     */
+    function enterPrintLayout(target) {
+      const opts = appState.ui.pdfOptions;
+      const captureArea = document.getElementById('pdf-capture-area');
+      const restores = [];
+      const setHidden = (el, hide) => {
+        const was = el.classList.contains('hidden');
+        restores.push(() => el.classList.toggle('hidden', was));
+        el.classList.toggle('hidden', hide);
+      };
+
+      if (target === 'pdf') setHidden(document.getElementById('pdf-direct-header'), false);
+
+      const sections = [
+        [document.getElementById('result-section-team'), appState.config.teamEnabled && opts.includeTeam],
+        [document.getElementById('result-section-aa'), !!opts.includeAA],
+        [document.getElementById('result-section-event'), !!opts.includeEvent && (opts.includedEvents || []).length > 0]
+      ];
+      let first = true;
+      sections.forEach(([el, on]) => {
+        setHidden(el, !on);
+        el.classList.toggle('print-page-break', on && !first);
+        if (on) first = false;
+      });
+      document.querySelectorAll('#event-standings-container > .event-card').forEach(card => {
+        setHidden(card, card.classList.contains('print-excluded'));
+      });
+
+      // 用紙の印字可能幅（96dpi換算）で表の必要幅を測る
+      const orient = opts.orientation || 'landscape';
+      const marginMm = target === 'pdf' ? 8 : 10;
+      const availPx = Math.floor(((orient === 'landscape' ? 297 : 210) - marginMm * 2) * 96 / 25.4);
+      captureArea.classList.add('print-compact');
+      captureArea.style.width = availPx + 'px';
+
+      const boxes = Array.from(captureArea.querySelectorAll('.print-fit'))
+        .filter(box => box.offsetParent !== null);
+      let maxOverflow = 0;
+      boxes.forEach(box => {
+        box.style.zoom = '';
+        const over = box.scrollWidth - box.clientWidth;
+        if (over <= 0) return;
+        maxOverflow = Math.max(maxOverflow, over);
+        if (target === 'print') {
+          // 印刷時の文字描画の差で数px広がることがあるため、2%の余裕を持たせる
+          box.style.zoom = String(Math.floor(box.clientWidth / box.scrollWidth * 980) / 1000);
+        }
+      });
+      if (target === 'pdf') {
+        // 画像化した全体を用紙幅に縮小して貼るので、はみ出し分だけ広げておく
+        captureArea.style.width = (availPx + maxOverflow + 2) + 'px';
+        // 縮小後のA4 1ページに相当する高さ(px)で改ページ位置を決める
+        const innerW = (orient === 'landscape' ? 297 : 210) - marginMm * 2;
+        const innerH = (orient === 'landscape' ? 210 : 297) - marginMm * 2;
+        paginateForPdf(captureArea, captureArea.offsetWidth * innerH / innerW);
+      }
+
+      return () => {
+        captureArea.querySelectorAll('.pdf-spacer').forEach(el => el.remove());
+        captureArea.classList.remove('print-compact');
+        captureArea.style.width = '';
+        boxes.forEach(box => { box.style.zoom = ''; });
+        sections.forEach(([el]) => el.classList.remove('print-page-break'));
+        restores.reverse().forEach(fn => fn());
+      };
+    }
+
+    /**
+     * PDF用の改ページ：行や見出しがページ境界をまたぐ場合、手前に余白を入れて次ページへ送る。
+     * 表の途中で改ページしたときは、次ページの先頭に見出し行を繰り返す。
+     * 団体・個人総合・種目別（.print-page-break）は必ず新しいページから始める。
+     */
+    function paginateForPdf(area, pageH) {
+      if (!(pageH > 100)) return;
+      const visible = el => el && el.offsetParent !== null;
+      const firstRow = el => Array.from(el.querySelectorAll('tbody tr')).find(visible) || el;
+      const units = [];
+      const header = document.getElementById('pdf-direct-header');
+      if (visible(header)) units.push({ el: header, endEl: header });
+
+      const addRows = scope => {
+        const table = scope.querySelector('table');
+        const headRow = table && table.querySelector('thead tr');
+        const rows = Array.from(scope.querySelectorAll('tbody tr')).filter(visible);
+        for (let i = 0; i < rows.length; i++) {
+          const tr = rows[i];
+          // 跳馬2本（rowspan）の2行は1組として扱う
+          const paired = tr.querySelector('td[rowspan]') && rows[i + 1];
+          units.push({ el: tr, endEl: paired ? rows[i + 1] : tr, isRow: true, headRow });
+          if (paired) i++;
+        }
+      };
+
+      ['result-section-team', 'result-section-aa', 'result-section-event'].forEach(id => {
+        const sec = document.getElementById(id);
+        if (!visible(sec)) return;
+        units.push({ el: sec, endEl: firstRow(sec), forceBreak: sec.classList.contains('print-page-break') });
+        if (id === 'result-section-event') {
+          sec.querySelectorAll('.event-card').forEach(card => {
+            if (!visible(card)) return;
+            units.push({ el: card, endEl: firstRow(card) });
+            addRows(card);
+          });
+        } else {
+          addRows(sec);
+        }
+      });
+
+      const topOf = el => el.getBoundingClientRect().top - area.getBoundingClientRect().top;
+      const bottomOf = el => el.getBoundingClientRect().bottom - area.getBoundingClientRect().top;
+
+      units.forEach(u => {
+        const t = topOf(u.el);
+        const b = bottomOf(u.endEl);
+        const pageEnd = (Math.floor(t / pageH) + 1) * pageH;
+        const atPageTop = t % pageH < 1;
+        const needBreak = u.forceBreak ? !atPageTop && t > 1 : (b > pageEnd && b - t < pageH);
+        if (!needBreak) return;
+
+        let spacer, anchor;
+        if (u.isRow) {
+          const cols = u.el.closest('table').rows[0].cells.length + 10;
+          spacer = document.createElement('tr');
+          spacer.className = 'pdf-spacer';
+          spacer.innerHTML = `<td colspan="${cols}"></td>`;
+          const td = spacer.firstChild;
+          ['padding', 'border', 'background'].forEach(p => td.style.setProperty(p, p === 'padding' ? '0' : 'none', 'important'));
+          u.el.parentNode.insertBefore(spacer, u.el);
+          anchor = u.el;
+          if (u.headRow) {
+            const head = u.headRow.cloneNode(true);
+            head.classList.add('pdf-spacer');
+            u.el.parentNode.insertBefore(head, u.el);
+            anchor = head;
+          }
+        } else {
+          spacer = document.createElement('div');
+          spacer.className = 'pdf-spacer';
+          u.el.parentNode.insertBefore(spacer, u.el);
+          anchor = u.el;
+        }
+        const sized = spacer.firstChild || spacer;
+        // 余白を入れた後の実測で、見出し（または行）がちょうどページ先頭に来るよう補正
+        let h = Math.max(0, pageEnd - t);
+        for (let k = 0; k < 3; k++) {
+          sized.style.height = h + 'px';
+          const diff = pageEnd - topOf(anchor);
+          if (Math.abs(diff) < 0.5) break;
+          h = Math.max(0, h + diff);
+        }
+      });
+    }
+
+    // Ctrl+P などブラウザから直接印刷した場合も同じレイアウトにする
+    let restorePrintLayout = null;
+    window.addEventListener('beforeprint', () => {
+      const view = document.getElementById('view-results');
+      if (!view || view.classList.contains('hidden')) return;
+      if (restorePrintLayout) restorePrintLayout();
+      restorePrintLayout = enterPrintLayout('print');
+    });
+    window.addEventListener('afterprint', () => {
+      if (restorePrintLayout) restorePrintLayout();
+      restorePrintLayout = null;
+    });
+
+    /**
      * ファイル名に使えない文字を除去・置換
      */
     function sanitizeFilename(name) {
@@ -2161,40 +2380,12 @@
       renderResults();
 
       const captureArea = document.getElementById('pdf-capture-area');
-      const directHeader = document.getElementById('pdf-direct-header');
-      const secTeam = document.getElementById('result-section-team');
-      const secAA = document.getElementById('result-section-aa');
-      const secEvent = document.getElementById('result-section-event');
-
-      // 現在の画面表示状態を退避
-      const prevTeamHidden = secTeam.classList.contains('hidden');
-      const prevAAHidden = secAA.classList.contains('hidden');
-      const prevEventHidden = secEvent.classList.contains('hidden');
-      const eventCards = Array.from(document.querySelectorAll('#event-standings-container > div'));
-      const prevCardHiddenStates = eventCards.map(card => card.classList.contains('hidden'));
-      const scrollBoxes = Array.from(captureArea.querySelectorAll('.overflow-x-auto'));
+      let restoreLayout = null;
 
       try {
-        // PDF専用ヘッダーを表示し、選択されたテーブルのみを一時的に可視化
-        directHeader.classList.remove('hidden');
-        secTeam.classList.toggle('hidden', !teamActive);
-        secAA.classList.toggle('hidden', !aaActive);
-        secEvent.classList.toggle('hidden', !evActive);
-
-        // 種目別カードのうち、PDF出力対象外を一時非表示、対象は一時表示
-        eventCards.forEach(card => {
-          if (card.classList.contains('print-excluded')) {
-            card.classList.add('hidden');
-          } else {
-            card.classList.remove('hidden');
-          }
-        });
-
-        // 横スクロールコンテナを一時的に全幅展開して見切れを防止
-        scrollBoxes.forEach(box => {
-          box.classList.remove('overflow-x-auto');
-          box.classList.add('overflow-visible');
-        });
+        // 出力対象の表だけを表示し、横幅を用紙に合わせる（団体・個人総合・種目別は改ページで分ける）
+        restoreLayout = enterPrintLayout('pdf');
+        const captureWidth = captureArea.offsetWidth;
 
         const safeTitle = sanitizeFilename(appState.config.compName);
         const datePart = (appState.config.compDate || localDateStr()).replace(/-/g, '');
@@ -2208,14 +2399,19 @@
             scale: 2,
             useCORS: true,
             logging: false,
-            letterRendering: true
+            letterRendering: true,
+            width: captureWidth,
+            windowWidth: Math.max(window.innerWidth, captureWidth + 40),
+            scrollX: 0,
+            scrollY: 0
           },
           jsPDF: {
             unit: 'mm',
             format: 'a4',
             orientation: opts.orientation || 'landscape'
           },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+          // 改ページは enterPrintLayout('pdf') で挿入済みのため、html2pdf 側の自動改ページは使わない
+          pagebreak: { mode: [] }
         };
 
         await html2pdf().set(pdfOptions).from(captureArea).save();
@@ -2225,17 +2421,7 @@
         showToast('PDF生成中にエラーが発生しました。「ブラウザ印刷」をお試しください', 'error');
       } finally {
         // 元の画面表示状態を完全に復元
-        scrollBoxes.forEach(box => {
-          box.classList.add('overflow-x-auto');
-          box.classList.remove('overflow-visible');
-        });
-        directHeader.classList.add('hidden');
-        secTeam.classList.toggle('hidden', prevTeamHidden);
-        secAA.classList.toggle('hidden', prevAAHidden);
-        secEvent.classList.toggle('hidden', prevEventHidden);
-        eventCards.forEach((card, idx) => {
-          card.classList.toggle('hidden', prevCardHiddenStates[idx]);
-        });
+        if (restoreLayout) restoreLayout();
 
         if (btn) {
           btn.disabled = false;
@@ -2428,6 +2614,10 @@
             <div class="text-[10px] font-normal text-slate-400">決定点 / D・E / ND・SB・加</div>
           </th>
         `).join('')}
+        <th class="aa-event-col py-3 px-2.5 text-right bg-navy-50 min-w-[148px] whitespace-nowrap">
+          <div>得点合計</div>
+          <div class="text-[10px] font-normal text-slate-400">D・E / ND・SB・加</div>
+        </th>
         <th class="py-3 px-3.5 text-right bg-orange-50/80 text-navy-900 font-extrabold min-w-[105px] whitespace-nowrap">個人総合点</th>
       `;
 
@@ -2484,6 +2674,21 @@
               </td>
             `;
           }).join('')}
+          ${ath.enteredEventsCount === 0
+            ? `<td class="aa-event-col py-2.5 px-2.5 text-right tabular-nums text-slate-300 bg-navy-50/60 align-middle">---</td>`
+            : `<td class="aa-event-col py-2 px-2.5 text-right align-middle bg-navy-50/60">
+                <div class="aa-breakdown-row text-[10px] tabular-nums leading-snug whitespace-nowrap space-y-0.5">
+                  <div class="flex justify-end items-center gap-2 text-slate-600">
+                    <span>D:<strong class="font-bold text-navy-900">${ath.aaDStr}</strong></span>
+                    <span>E:<strong class="font-bold text-navy-900">${ath.aaEStr}</strong></span>
+                  </div>
+                  <div class="flex justify-end items-center gap-1.5">
+                    <span class="${ath.aaNdMilli > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}">ND:-${ath.aaNdStr}</span>
+                    <span class="${ath.aaSbMilli > 0 ? 'text-emerald-600 font-bold' : 'text-slate-400'}">SB:+${ath.aaSbStr}</span>
+                    <span class="${ath.aaBonusMilli > 0 ? 'text-orange-600 font-bold' : 'text-slate-400'}">加:+${ath.aaBonusStr}</span>
+                  </div>
+                </div>
+              </td>`}
           <td class="py-2.5 px-3.5 text-right font-extrabold text-base tabular-nums text-navy-900 bg-orange-50/40 align-middle whitespace-nowrap">
             ${ath.aaTotalStr}
           </td>
@@ -2525,7 +2730,7 @@
               </div>
               <span class="text-xs text-slate-500">※同点時はEスコア上位優先</span>
             </div>
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto print-fit">
               <table class="w-full text-left border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-xs text-slate-600">

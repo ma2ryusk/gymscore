@@ -2211,20 +2211,27 @@
 
       const boxes = Array.from(captureArea.querySelectorAll('.print-fit'))
         .filter(box => box.offsetParent !== null);
-      let maxOverflow = 0;
+      // プリンタの印字できない余白や文字描画の差で右端が切れないよう、幅の95%に収める
+      const FIT = 0.95;
+      let maxRatio = 0;
       boxes.forEach(box => {
         box.style.zoom = '';
-        const over = box.scrollWidth - box.clientWidth;
-        if (over <= 0) return;
-        maxOverflow = Math.max(maxOverflow, over);
-        if (target === 'print') {
-          // 印刷時の文字描画の差で数px広がることがあるため、2%の余裕を持たせる
-          box.style.zoom = String(Math.floor(box.clientWidth / box.scrollWidth * 980) / 1000);
+        const table = box.querySelector('table');
+        if (!table) return;
+        // 表を最小幅まで縮めたときの幅（これ以上は縮まない）を実測
+        const prevW = table.style.width;
+        table.style.setProperty('width', '1px', 'important');
+        const minW = Math.max(table.offsetWidth, box.scrollWidth);
+        table.style.width = prevW;
+        const ratio = minW / (box.clientWidth * FIT);
+        maxRatio = Math.max(maxRatio, ratio);
+        if (target === 'print' && ratio > 1) {
+          box.style.zoom = String(Math.floor(1000 / ratio) / 1000);
         }
       });
       if (target === 'pdf') {
-        // 画像化した全体を用紙幅に縮小して貼るので、はみ出し分だけ広げておく
-        captureArea.style.width = (availPx + maxOverflow + 2) + 'px';
+        // 画像化した全体を用紙幅に縮小して貼るので、収まる幅まで広げておく
+        if (maxRatio > 1) captureArea.style.width = Math.ceil(availPx * maxRatio) + 'px';
         // 縮小後のA4 1ページに相当する高さ(px)で改ページ位置を決める
         const innerW = (orient === 'landscape' ? 297 : 210) - marginMm * 2;
         const innerH = (orient === 'landscape' ? 210 : 297) - marginMm * 2;
@@ -2614,11 +2621,10 @@
             <div class="text-[10px] font-normal text-slate-400">決定点 / D・E / ND・SB・加</div>
           </th>
         `).join('')}
-        <th class="aa-event-col py-3 px-2.5 text-right bg-navy-50 min-w-[148px] whitespace-nowrap">
-          <div>得点合計</div>
-          <div class="text-[10px] font-normal text-slate-400">D・E / ND・SB・加</div>
+        <th class="aa-event-col py-3 px-2.5 text-right bg-orange-50/80 text-navy-900 min-w-[148px] whitespace-nowrap">
+          <div class="font-extrabold">個人総合点</div>
+          <div class="text-[10px] font-normal text-slate-500">総合点 / D・E / ND・SB・加 合計</div>
         </th>
-        <th class="py-3 px-3.5 text-right bg-orange-50/80 text-navy-900 font-extrabold min-w-[105px] whitespace-nowrap">個人総合点</th>
       `;
 
       const tbodyAA = document.getElementById('tbody-aa-standings');
@@ -2675,9 +2681,10 @@
             `;
           }).join('')}
           ${ath.enteredEventsCount === 0
-            ? `<td class="aa-event-col py-2.5 px-2.5 text-right tabular-nums text-slate-300 bg-navy-50/60 align-middle">---</td>`
-            : `<td class="aa-event-col py-2 px-2.5 text-right align-middle bg-navy-50/60">
-                <div class="aa-breakdown-row text-[10px] tabular-nums leading-snug whitespace-nowrap space-y-0.5">
+            ? `<td class="aa-event-col py-2.5 px-2.5 text-right tabular-nums text-slate-300 bg-orange-50/40 align-middle">---</td>`
+            : `<td class="aa-event-col py-2 px-2.5 text-right align-middle bg-orange-50/40">
+                <div class="font-extrabold text-base sm:text-lg tabular-nums text-navy-900 leading-tight">${ath.aaTotalStr}</div>
+                <div class="aa-breakdown-row mt-1 pt-1 border-t border-orange-200/70 text-[10px] tabular-nums leading-snug whitespace-nowrap space-y-0.5">
                   <div class="flex justify-end items-center gap-2 text-slate-600">
                     <span>D:<strong class="font-bold text-navy-900">${ath.aaDStr}</strong></span>
                     <span>E:<strong class="font-bold text-navy-900">${ath.aaEStr}</strong></span>
@@ -2689,9 +2696,6 @@
                   </div>
                 </div>
               </td>`}
-          <td class="py-2.5 px-3.5 text-right font-extrabold text-base tabular-nums text-navy-900 bg-orange-50/40 align-middle whitespace-nowrap">
-            ${ath.aaTotalStr}
-          </td>
         </tr>
       `).join('');
 

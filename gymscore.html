@@ -2429,7 +2429,7 @@
             logging: false,
             letterRendering: true,
             width: captureWidth,
-            windowWidth: Math.max(window.innerWidth, captureWidth + 40),
+            windowWidth: Math.max(window.innerWidth, captureWidth + 80),
             scrollX: 0,
             scrollY: 0
           },
@@ -2442,7 +2442,17 @@
           pagebreak: { mode: [] }
         };
 
-        await html2pdf().set(pdfOptions).from(captureArea).save();
+        // html2pdf は複製を「用紙幅固定・中央寄せ」の枠に入れ、外側を overflow:hidden で切り取る。
+        // 表に合わせて広げた幅がその枠をはみ出すと右端が切れるため、枠を複製の幅に合わせて左寄せにする
+        await html2pdf().set(pdfOptions).from(captureArea).toContainer().then(function () {
+          const container = this.prop.container;
+          const overlay = this.prop.overlay;
+          container.style.width = captureWidth + 'px';
+          container.style.margin = '0';
+          container.style.right = 'auto';
+          overlay.style.right = 'auto';
+          overlay.style.width = (captureWidth + 40) + 'px';
+        }).save();
         showToast(`PDFファイルを保存しました（${filename}）`, 'success');
       } catch (err) {
         console.error('PDF generation error:', err);

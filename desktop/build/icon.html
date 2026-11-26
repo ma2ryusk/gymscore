@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<!-- アイコン原稿：npm run icon で 512x512 の icon.png に書き出す -->
+<link rel="stylesheet" href="../vendor/fontawesome/css/all.min.css">
+<style>
+  html, body { margin: 0; width: 512px; height: 512px; background: transparent; overflow: hidden; }
+  .tile {
+    position: absolute; inset: 16px; border-radius: 108px;
+    background: #0f2342;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 -22px 0 #f97316;
+  }
+  .badge {
+    width: 300px; height: 300px; border-radius: 76px; background: #ea580c;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+  }
+  i { color: #fff; font-size: 176px; }
+</style>
+</head>
+<body>
+  <div class="tile"><div class="badge"><i class="fa-solid fa-medal"></i></div></div>
+</body>
+</html>

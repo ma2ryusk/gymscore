@@ -1,0 +1,49 @@
+{
+  "name": "gymscore-desktop",
+  "productName": "GymScore",
+  "version": "1.0.0",
+  "description": "体操競技 得点集計アプリ GymScoreβ（鯖江高校体操部作成）",
+  "author": "鯖江高校体操部",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "prepare-app": "node scripts/prepare.js",
+    "start": "npm run prepare-app && electron .",
+    "dist": "npm run prepare-app && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "jp.sabae.gymscore",
+    "productName": "GymScore",
+    "copyright": "鯖江高校体操部作成",
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GymScore",
+      "artifactName": "GymScore-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "GymScore-Portable-${version}.${ext}"
+    }
+  }
+}
